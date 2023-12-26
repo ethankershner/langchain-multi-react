@@ -6,6 +6,7 @@ from langchain.agents.chat.base import ChatAgent
 from langchain.agents.conversational.base import ConversationalAgent
 from langchain.agents.conversational_chat.base import ConversationalChatAgent
 from langchain.agents.mrkl.base import ZeroShotAgent
+from langchain.agents.mrkl.base import ZeroShotAgentMulti
 from langchain.agents.openai_functions_agent.base import OpenAIFunctionsAgent
 from langchain.agents.openai_functions_multi_agent.base import OpenAIMultiFunctionsAgent
 from langchain.agents.react.base import ReActDocstoreAgent
@@ -16,6 +17,7 @@ AGENT_TYPE = Union[Type[BaseSingleActionAgent], Type[OpenAIMultiFunctionsAgent]]
 
 AGENT_TO_CLASS: Dict[AgentType, AGENT_TYPE] = {
     AgentType.ZERO_SHOT_REACT_DESCRIPTION: ZeroShotAgent,
+    AgentType.ZERO_SHOT_MULTI_REACT_DESCRIPTION: ZeroShotAgentMulti,
     AgentType.REACT_DOCSTORE: ReActDocstoreAgent,
     AgentType.SELF_ASK_WITH_SEARCH: SelfAskWithSearchAgent,
     AgentType.CONVERSATIONAL_REACT_DESCRIPTION: ConversationalAgent,
