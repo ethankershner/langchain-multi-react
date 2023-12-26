@@ -1,21 +1,24 @@
 """Attempt to implement MRKL systems as described in arxiv.org/pdf/2205.00445.pdf."""
 from __future__ import annotations
 
-from typing import Any, Callable, List, NamedTuple, Optional, Sequence
+from typing import Any, Callable, List, NamedTuple, Optional, Sequence, Union, Tuple
 
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts import PromptTemplate
 from langchain_core.pydantic_v1 import Field
 from langchain_core.tools import BaseTool
+from langchain.schema import AgentAction, AgentFinish
 
-from langchain.agents.agent import Agent, AgentExecutor, AgentOutputParser
+from langchain.agents.agent import Agent, AgentExecutor, AgentOutputParser, BaseMultiActionAgent
 from langchain.agents.agent_types import AgentType
-from langchain.agents.mrkl.output_parser import MRKLOutputParser
-from langchain.agents.mrkl.prompt import FORMAT_INSTRUCTIONS, PREFIX, SUFFIX
+from langchain.agents.mrkl.output_parser import MRKLOutputParser, MRKLMultiActionOutputParser
+from langchain.agents.mrkl.prompt import FORMAT_INSTRUCTIONS, FORMAT_INSTRUCTIONS_MULTI, PREFIX, SUFFIX
 from langchain.agents.tools import Tool
 from langchain.agents.utils import validate_tools_single_input
 from langchain.callbacks.base import BaseCallbackManager
 from langchain.chains import LLMChain
+from langchain.callbacks.manager import Callbacks
+from langchain.memory import ConversationBufferWindowMemory
 
 
 class ChainConfig(NamedTuple):
@@ -35,6 +38,8 @@ class ChainConfig(NamedTuple):
 class ZeroShotAgent(Agent):
     """Agent for the MRKL chain."""
 
+    format_instructions = FORMAT_INSTRUCTIONS
+
     output_parser: AgentOutputParser = Field(default_factory=MRKLOutputParser)
 
     @classmethod
@@ -52,17 +57,22 @@ class ZeroShotAgent(Agent):
         return "Observation: "
 
     @property
+    def format_instructions(self) -> str:
+        """Format instructions to use."""
+        return self.format_instructions
+
+    @property
     def llm_prefix(self) -> str:
         """Prefix to append the llm call with."""
         return "Thought:"
-
+    
     @classmethod
     def create_prompt(
         cls,
         tools: Sequence[BaseTool],
         prefix: str = PREFIX,
         suffix: str = SUFFIX,
-        format_instructions: str = FORMAT_INSTRUCTIONS,
+        format_instructions: str = cls.FORMAT_INSTRUCTIONS,
         input_variables: Optional[List[str]] = None,
     ) -> PromptTemplate:
         """Create prompt in the style of the zero shot agent.
@@ -77,6 +87,7 @@ class ZeroShotAgent(Agent):
         Returns:
             A PromptTemplate with the template assembled from the pieces here.
         """
+
         tool_strings = "\n".join([f"{tool.name}: {tool.description}" for tool in tools])
         tool_names = ", ".join([tool.name for tool in tools])
         format_instructions = format_instructions.format(tool_names=tool_names)
@@ -136,7 +147,51 @@ class ZeroShotAgent(Agent):
                 )
         super()._validate_tools(tools)
 
+class ZeroShotAgentMulti(ZeroShotAgent, BaseMultiActionAgent):
 
+    format_instructions = FORMAT_INSTRUCTIONS_MULTI
+
+    output_parser: Field(default_factory=MRKLMultiActionOutputParser)
+
+    @classmethod
+    def _get_default_output_parser(cls, **kwargs: Any) -> AgentOutputParser:
+        return MRKLMultiActionOutputParser()
+    
+    @property
+    def _agent_type(self) -> str:
+        """Return Identifier of agent type."""
+        return AgentType.ZERO_SHOT_MULTI_REACT_DESCRIPTION
+
+    def plan(
+        self,
+        intermediate_steps: List[Tuple[AgentAction, str]],
+        callbacks: Callbacks = None,
+        **kwargs: Any,
+    ) -> Union[List[AgentAction], AgentFinish]:
+        
+        output = self.llm_chain.run(
+            intermediate_steps=intermediate_steps,
+            stop=self.stop,
+            callbacks=callbacks,
+            **kwargs,
+        )
+        return self.output_parser.parse(output)
+
+    async def aplan(
+        self,
+        intermediate_steps: List[Tuple[AgentAction, str]],
+        callbacks: Callbacks = None,
+        **kwargs: Any,
+    ) -> Union[List[AgentAction], AgentFinish]:
+
+        output = await self.llm_chain.arun(
+            intermediate_steps=intermediate_steps,
+            stop=self.stop,
+            callbacks=callbacks,
+            **kwargs,
+        )
+        return self.output_parser.parse(output)
+    
 class MRKLChain(AgentExecutor):
     """[Deprecated] Chain that implements the MRKL system."""
 
